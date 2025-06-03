@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String?
+  role          Role      @default(CLIENT)
+  createdAt     DateTime  @default(now())
+  citas         Cita[]    @relation("ClienteCitas")
+  name          String
+  emailVerified Boolean
+  image         String?
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+model Trabajador {
+  id             String           @id @default(uuid())
+  nombre         String
+  especialidad   String?
+  servicios      Servicio[]       @relation("TrabajadorServicios")
+  citas          Cita[]           @relation("TrabajadorCitas")
+  disponibilidad Disponibilidad[]
+  bloqueos       BloqueoHorario[]
+}
+
+model Servicio {
+  id              String       @id @default(uuid())
+  nombre          String
+  descripcion     String?
+  duracionMinutos Int
+  precio          Float
+  trabajadores    Trabajador[] @relation("TrabajadorServicios")
+  citas           Cita[]
+}
+
+model Cita {
+  id           String     @id @default(uuid())
+  fechaHora    DateTime
+  estado       EstadoCita @default(PENDIENTE)
+  cliente      User       @relation("ClienteCitas", fields: [clienteId], references: [id])
+  clienteId    String
+  trabajador   Trabajador @relation("TrabajadorCitas", fields: [trabajadorId], references: [id])
+  trabajadorId String
+  servicio     Servicio   @relation(fields: [servicioId], references: [id])
+  servicioId   String
+  creadoEn     DateTime   @default(now())
+}
+
+enum EstadoCita {
+  PENDIENTE
+  CONFIRMADA
+  CANCELADA
+  COMPLETADA
+}
+
+model Disponibilidad {
+  id           String     @id @default(uuid())
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
+  trabajadorId String
+  diaSemana    Int // 0 = Domingo, 6 = Sábado
+  horaInicio   String // formato: '08:00'
+  horaFin      String // formato: '16:00'
+}
+
+model BloqueoHorario {
+  id           String     @id @default(uuid())
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
+  trabajadorId String
+  fecha        DateTime
+  horaInicio   String // formato: '10:00'
+  horaFin      String // formato: '12:00'
+  motivo       String?
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
