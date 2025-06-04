@@ -30,13 +30,14 @@ enum Role {
 }
 
 model Trabajador {
-  id             String           @id @default(uuid())
+  id             String                 @id @default(uuid())
   nombre         String
   especialidad   String?
-  servicios      Servicio[]       @relation("TrabajadorServicios")
-  citas          Cita[]           @relation("TrabajadorCitas")
-  disponibilidad Disponibilidad[]
+  servicios      Servicio[]             @relation("TrabajadorServicios")
+  citas          Cita[]                 @relation("TrabajadorCitas")
   bloqueos       BloqueoHorario[]
+  diasCerrados   DiaCerradoTrabajador[]
+  diasEspeciales DiaEspecial[]
 }
 
 model Servicio {
@@ -69,22 +70,40 @@ enum EstadoCita {
   COMPLETADA
 }
 
-model Disponibilidad {
-  id           String     @id @default(uuid())
-  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
-  trabajadorId String
-  diaSemana    Int // 0 = Domingo, 6 = Sábado
-  horaInicio   String // formato: '08:00'
-  horaFin      String // formato: '16:00'
-}
-
 model BloqueoHorario {
   id           String     @id @default(uuid())
   trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
   trabajadorId String
+  fecha        DateTime // solo fecha, hora 00:00
+  horaInicio   String // formato 'HH:mm'
+  horaFin      String // formato 'HH:mm'
+  motivo       String?
+}
+
+model DiaCerradoGlobal {
+  id     String   @id @default(uuid())
+  fecha  DateTime @unique // solo fecha, hora 00:00
+  motivo String?
+}
+
+model DiaCerradoTrabajador {
+  id           String     @id @default(uuid())
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
+  trabajadorId String
   fecha        DateTime
-  horaInicio   String // formato: '10:00'
-  horaFin      String // formato: '12:00'
+  motivo       String?
+
+  @@unique([trabajadorId, fecha])
+}
+
+model DiaEspecial {
+  id           String     @id @default(uuid())
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
+  trabajadorId String
+  fecha        DateTime   @unique
+  abierto      Boolean    @default(true)
+  horaInicio   String? // formato 'HH:mm'
+  horaFin      String? // formato 'HH:mm'
   motivo       String?
 }
 
