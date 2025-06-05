@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -30,12 +31,12 @@ enum Role {
 }
 
 model Trabajador {
-  id             String                 @id @default(uuid())
-  nombre         String
-  especialidad   String?
-  servicios      Servicio[]             @relation("TrabajadorServicios")
-  citas          Cita[]                 @relation("TrabajadorCitas")
-  bloqueos       BloqueoHorario[]
+  id           String     @id @default(uuid())
+  nombre       String
+  especialidad String?
+  servicios    Servicio[] @relation("TrabajadorServicios")
+  citas        Cita[]     @relation("TrabajadorCitas")
+
   diasCerrados   DiaCerradoTrabajador[]
   diasEspeciales DiaEspecial[]
 }
@@ -68,16 +69,6 @@ enum EstadoCita {
   CONFIRMADA
   CANCELADA
   COMPLETADA
-}
-
-model BloqueoHorario {
-  id           String     @id @default(uuid())
-  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id])
-  trabajadorId String
-  fecha        DateTime // solo fecha, hora 00:00
-  horaInicio   String // formato 'HH:mm'
-  horaFin      String // formato 'HH:mm'
-  motivo       String?
 }
 
 model DiaCerradoGlobal {

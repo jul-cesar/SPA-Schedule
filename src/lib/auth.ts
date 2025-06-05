@@ -8,7 +8,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 const prisma = new PrismaClient();
 export const auth = betterAuth({
     database: prismaAdapter(prisma, {
-        provider: "postgresql", // or "mysql", "postgresql", ...etc
+        provider: "postgresql", 
     }),
     socialProviders: {
         google: {
@@ -20,5 +20,14 @@ export const auth = betterAuth({
     },
     emailAndPassword: {
         enabled: true,
+    },
+    user: {
+        additionalFields: {
+            role: {
+                type: "string",
+                defaultValue:"CLIENT",
+                required: true,
+            }
+        }
     }
 });
