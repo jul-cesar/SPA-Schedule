@@ -28,10 +28,56 @@ type AvailableDates = {
   isClosed: boolean;
 };
 
+export const getunavailableDates = async (
+  idTrabajador: string
+): Promise<Response<string[]>> => {
+  try {
+    const closedDates = await prisma.diaCerradoTrabajador.findMany({
+      where: {
+        trabajadorId: idTrabajador,
+      },
+      select: {
+        fecha: true,
+      },
+    });
+
+    const globalClosedDates = await prisma.diaCerradoGlobal.findMany({
+      select: {
+        fecha: true,
+      },
+    });
+
+    const unavailableDates = [
+      ...closedDates.map((date) => date.fecha.toISOString().slice(0, 10)),
+      ...globalClosedDates.map((date) => date.fecha.toISOString().slice(0, 10)),
+    ];
+    return {
+      success: true,
+      message: "Fechas no disponibles obtenidas correctamente",
+      data: unavailableDates,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al obtener las fechas no disponibles",
+    };
+  }
+};
+
 export const getAvailableDates = async (
   date: string,
-  idTrabajador: string
+  idTrabajador: string,
+  duracionMinutos: number = 30
 ): Promise<Response<AvailableDates>> => {
+  console.log(
+    "getAvailableDates called with date:",
+    date,
+    "idTrabajador:",
+    idTrabajador,
+    "duracion:",
+    duracionMinutos
+  );
   if (!date) {
     return {
       success: false,
@@ -105,14 +151,60 @@ export const getAvailableDates = async (
           lt: new Date(`${date}T23:59:59`),
         },
       },
+      include: {
+        servicio: true,
+      },
     });
 
-    const occupiedSlots = citas.map((cita) =>
-      cita.fechaHora.toTimeString().slice(0, 5)
-    );
-    const availableSlots = slots.filter(
-      (slot) => !occupiedSlots.includes(slot)
-    );
+    const blockedSlots = new Set<string>();
+
+    citas.forEach((cita) => {
+      const startTime = cita.fechaHora;
+      const citaDuracion = cita.servicio?.duracionMinutos || 30;
+
+   
+      const startSlot = startTime.toTimeString().slice(0, 5);
+      blockedSlots.add(startSlot);
+
+      const slotsToBlock = Math.ceil(citaDuracion / 30);
+
+      if (slotsToBlock > 1) {
+        let currentTime = new Date(startTime);
+        for (let i = 1; i < slotsToBlock; i++) {
+          currentTime = new Date(currentTime.getTime() + 30 * 60000); 
+          blockedSlots.add(currentTime.toTimeString().slice(0, 5));
+        }
+      }
+    });
+
+
+    const requestedServiceSlots = Math.ceil(duracionMinutos / 30);
+
+
+    const availableSlots = slots.filter((slot) => {
+      
+      if (blockedSlots.has(slot)) return false;
+
+   
+      if (requestedServiceSlots > 1) {
+ 
+        const [hours, minutes] = slot.split(":").map(Number);
+        let slotTime = new Date(2000, 0, 1, hours, minutes);
+
+        
+        for (let i = 1; i < requestedServiceSlots; i++) {
+          slotTime = new Date(slotTime.getTime() + 30 * 60000);
+          const nextSlot = slotTime.toTimeString().slice(0, 5);
+
+   
+          if (blockedSlots.has(nextSlot) || !slots.includes(nextSlot)) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
 
     return {
       success: true,
@@ -128,6 +220,51 @@ export const getAvailableDates = async (
     return {
       success: false,
       message: "Error al obtener las fechas disponibles",
+    };
+  }
+};
+export const getServicioById = async (
+  id: string
+): Promise<
+  | Response<
+      Prisma.ServicioGetPayload<{
+        include: {
+          trabajadores: true;
+        };
+      }>
+    >
+  | undefined
+> => {
+  try {
+    if (!id) {
+      return {
+        success: false,
+        message: "ID de servicio no proporcionado",
+      };
+    }
+
+    const servicio = await prisma.servicio.findUnique({
+      where: { id },
+      include: { trabajadores: true },
+    });
+
+    if (!servicio) {
+      return {
+        success: false,
+        message: "Servicio no encontrado",
+      };
+    }
+
+    return {
+      success: true,
+      message: "Servicio obtenido correctamente",
+      data: servicio,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al obtener el servicio",
     };
   }
 };
@@ -179,6 +316,57 @@ export const createTrabajador = async (
     return {
       success: false,
       message: "Error al crear el trabajador",
+    };
+  }
+};
+
+export const createCita = async (nuevaCita: {
+  servicioId: string;
+  trabajadorId: string;
+  clienteId: string;
+  fechahora: string;
+}): Promise<
+  | Response<
+      Prisma.CitaGetPayload<{
+        include: {
+          trabajador: true;
+          servicio: true;
+        };
+      }>
+    >
+  | undefined
+> => {
+  try {
+    if (!nuevaCita) {
+      return {
+        success: false,
+        message: "Datos de la cita no proporcionados",
+      };
+    }
+
+    const cita = await prisma.cita.create({
+      data: {
+        fechaHora: nuevaCita.fechahora,
+        trabajadorId: nuevaCita.trabajadorId,
+        servicioId: nuevaCita.servicioId,
+        clienteId: nuevaCita.clienteId,
+      },
+      include: {
+        trabajador: true,
+        servicio: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Cita creada correctamente",
+      data: cita,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al crear la cita",
     };
   }
 };
@@ -277,6 +465,9 @@ export const getServicios = async (): Promise<
       include: {
         trabajadores: true,
       },
+      orderBy: {
+        nombre: "asc",
+      },
     });
 
     return {
@@ -329,7 +520,6 @@ export const updateTrabajador = async (
       };
     }
 
-    // Actualizamos el trabajador y sus relaciones
     const trabajador = await prisma.trabajador.update({
       where: { id },
       data: {
@@ -428,3 +618,89 @@ export const updateServicio = async (
     };
   }
 };
+
+export const getCitas = async (
+): Promise<
+  Response<
+    Prisma.CitaGetPayload<{
+      include: {
+        trabajador: true;
+        servicio: true;
+        cliente: true;
+      };
+    }>[]
+  > | undefined
+> => {
+  try {
+    const citas = await prisma.cita.findMany({
+      include: {
+        trabajador: true,
+        servicio: true,
+        cliente: true,
+      },
+      orderBy: {
+        fechaHora: "asc",
+      },
+    });
+
+    return {
+      success: true,
+      message: "Citas obtenidas correctamente",
+      data: citas,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al obtener las citas",
+    };
+  }
+}
+
+
+export const updateCitaStatus = async (
+  id: string,
+  status: Prisma.CitaUpdateInput["estado"]
+): Promise<
+  Response<
+    Prisma.CitaGetPayload<{
+      include: {
+        trabajador: true;
+        servicio: true;
+        cliente: true;
+      };
+    }>
+  >
+> => {    
+  console.log("updateCitaStatus called with id:", id, "status:", status);
+  try {
+    if (!id || !status) {
+      return {
+        success: false,
+        message: "ID de cita o estado no proporcionados",
+      };
+    }
+
+    const cita = await prisma.cita.update({
+      where: { id },
+      data: { estado: status },
+      include: {
+        trabajador: true,
+        servicio: true,
+        cliente: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Estado de la cita actualizado correctamente",
+      data: cita,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al actualizar el estado de la cita",
+    };
+  }
+}

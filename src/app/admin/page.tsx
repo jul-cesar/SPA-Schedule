@@ -3,12 +3,13 @@
 import {
   createservicio,
   createTrabajador,
+  getCitas,
   getServicios,
   getTrabajadores,
+  updateCitaStatus,
   updateServicio,
   updateTrabajador,
 } from "@/actions/actions";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -34,15 +42,24 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useQuery } from "@tanstack/react-query";
+import { authClient } from "@/lib/auth-client";
+import { Prisma } from "@prisma/client";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
   Briefcase,
-  CheckCircle,
+  Calendar,
   Clock,
   DollarSign,
   Edit,
+  LoaderCircle,
   Plus,
   Star,
   Trash2,
@@ -50,34 +67,164 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface FormErrors {
   [key: string]: string;
 }
 
-export default function AdminPage() {
-  const { data: trabajadores } = useQuery({
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const { data: session } = await authClient.getSession();
+const usuarioActual = session?.user;
+
+// Loading Skeleton Component
+const TableSkeleton = () => (
+  <div className="w-full animate-pulse">
+    <div className="h-10 bg-gray-200 rounded-md mb-4 w-1/4"></div>
+    <div className="space-y-3">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="h-12 bg-gray-200 rounded-md w-full"></div>
+      ))}
+    </div>
+  </div>
+);
+
+// Empty State Component
+const EmptyState = ({
+  type,
+  onAddNew,
+}: {
+  type: string;
+  onAddNew: () => void;
+}) => (
+  <div className="text-center py-10 border-2 border-dashed rounded-lg">
+    <h3 className="text-lg font-medium mb-2">No hay {type} registrados</h3>
+    <p className="text-gray-500 mb-4">Agrega uno nuevo para empezar</p>
+    <Button onClick={onAddNew}>
+      <Plus className="w-4 h-4 mr-2" />
+      Agregar {type}
+    </Button>
+  </div>
+);
+
+function AdminPageContent() {
+  const queryClient = useQueryClient();
+
+  const { data: trabajadores, isLoading: loadingTrabajadores } = useQuery({
     queryKey: ["trabajadores"],
     queryFn: async () => {
-      const res = await getTrabajadores();
-      if (!res.success) {
-        throw new Error(res.message);
+      const response = await getTrabajadores();
+      if (!response.success) {
+        throw new Error(response.message);
       }
-      return res.data;
+      return response.data || [];
     },
   });
-  const { data: servicios } = useQuery({
+
+  const { data: servicios, isLoading: loadingServicios } = useQuery({
     queryKey: ["servicios"],
     queryFn: async () => {
-      const res = await getServicios();
-      if (!res.success) {
-        throw new Error(res.message);
+      const response = await getServicios();
+      if (!response.success) {
+        throw new Error(response.message);
       }
-      return res.data;
+      return response.data || [];
     },
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+
+  const { data: citas, isLoading: loadingCitas } = useQuery({
+    queryKey: ["citas"],
+    queryFn: async () => {
+      const response = await getCitas();
+      if (!response?.success) {
+        throw new Error(response?.message);
+      }
+      return response.data || [];
+    },
+  });
+
+  // Mutations
+  const createTrabajadorMutation = useMutation({
+    mutationFn: createTrabajador,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trabajadores"] });
+      toast.success("Trabajador creado exitosamente");
+      setDialogOpen((prev) => ({ ...prev, trabajador: false }));
+      resetTrabajadorForm();
+    },
+    onError: (error: any) => {
+      toast.error("Error al crear el trabajador: " + error.message);
+    },
+  });
+
+  const updateTrabajadorMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      updateTrabajador(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["trabajadores"] });
+      toast.success("Trabajador actualizado exitosamente");
+      setEditDialogOpen((prev) => ({ ...prev, trabajador: false }));
+      resetTrabajadorForm();
+    },
+    onError: (error: any) => {
+      toast.error("Error al actualizar el trabajador: " + error.message);
+    },
+  });
+
+  const createServicioMutation = useMutation({
+    mutationFn: createservicio,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["servicios"] });
+      toast.success("Servicio creado exitosamente");
+      setDialogOpen((prev) => ({ ...prev, servicio: false }));
+      resetServicioForm();
+    },
+    onError: (error: any) => {
+      toast.error("Error al crear el servicio: " + error.message);
+    },
+  });
+
+  const updateServicioMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      updateServicio(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["servicios"] });
+      toast.success("Servicio actualizado exitosamente");
+      setEditDialogOpen((prev) => ({ ...prev, servicio: false }));
+      resetServicioForm();
+    },
+    onError: (error: any) => {
+      toast.error("Error al actualizar el servicio: " + error.message);
+    },
+  });
+
+  const updateCitaMutation = useMutation({
+    mutationFn: ({
+      id,
+      estado,
+    }: {
+      id: string;
+      estado: Prisma.CitaUpdateInput["estado"];
+    }) => updateCitaStatus(id, estado),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["citas"] });
+      toast.success("Estado de cita actualizado");
+      setDialogOpen((prev) => ({ ...prev, cita: false }));
+    },
+    onError: (error: any) => {
+      toast.error("Error al actualizar la cita: " + error.message);
+    },
+  });
+
   const [errors, setErrors] = useState<FormErrors>({});
 
   const [trabajadorForm, setTrabajadorForm] = useState({
@@ -97,15 +244,42 @@ export default function AdminPage() {
   const [dialogOpen, setDialogOpen] = useState({
     trabajador: false,
     servicio: false,
+    cita: false,
   });
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [newEstadoCita, setNewEstadoCita] =
+    useState<Prisma.CitaUpdateInput["estado"]>("CANCELADA");
 
   const [editDialogOpen, setEditDialogOpen] = useState({
     trabajador: false,
     servicio: false,
   });
 
+  const [activeTab, setActiveTab] = useState("trabajadores");
+
+  // Reset form functions
+  const resetTrabajadorForm = () => {
+    setTrabajadorForm({
+      nombre: "",
+      especialidad: "",
+      serviciosSeleccionados: [],
+    });
+    setErrors({});
+  };
+
+  const resetServicioForm = () => {
+    setServicioForm({
+      nombre: "",
+      descripcion: "",
+      duracionMinutos: "",
+      precio: "",
+      trabajadoresSeleccionados: [],
+    });
+    setErrors({});
+  };
+
+  // Form validation functions
   const validateTrabajadorForm = (): FormErrors => {
     const newErrors: FormErrors = {};
 
@@ -148,34 +322,13 @@ export default function AdminPage() {
       return;
     }
 
-    setIsLoading(true);
+    const nuevoTrabajador = {
+      nombre: trabajadorForm.nombre,
+      especialidad: trabajadorForm.especialidad || null,
+      serviciosIds: trabajadorForm.serviciosSeleccionados,
+    };
 
-    try {
-      const nuevoTrabajador = {
-        nombre: trabajadorForm.nombre,
-        especialidad: trabajadorForm.especialidad || null,
-        serviciosIds: trabajadorForm.serviciosSeleccionados,
-      };
-
-      const response = await createTrabajador(nuevoTrabajador);
-
-      if (!response.success) {
-        throw new Error(response.message);
-      }
-
-      setTrabajadorForm({
-        nombre: "",
-        especialidad: "",
-        serviciosSeleccionados: [],
-      });
-      setDialogOpen((prev) => ({ ...prev, trabajador: false }));
-      setSuccess("Trabajador creado exitosamente");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
-      setErrors({ general: "Error al crear trabajador" });
-    } finally {
-      setIsLoading(false);
-    }
+    createTrabajadorMutation.mutate(nuevoTrabajador);
   };
 
   const handleCreateServicio = async () => {
@@ -187,61 +340,25 @@ export default function AdminPage() {
       return;
     }
 
-    setIsLoading(true);
+    const nuevoServicio = {
+      nombre: servicioForm.nombre,
+      descripcion: servicioForm.descripcion || null,
+      duracionMinutos: Number.parseInt(servicioForm.duracionMinutos),
+      precio: Number.parseFloat(servicioForm.precio),
+      trabajadoresIds: servicioForm.trabajadoresSeleccionados,
+    };
 
-    try {
-      const nuevoServicio = {
-        nombre: servicioForm.nombre,
-        descripcion: servicioForm.descripcion || null,
-        duracionMinutos: Number.parseInt(servicioForm.duracionMinutos),
-        precio: Number.parseFloat(servicioForm.precio),
-        trabajadoresIds: servicioForm.trabajadoresSeleccionados,
-      };
-
-      const response = await createservicio(nuevoServicio);
-
-      if (!response.success) {
-        throw new Error(response.message);
-      }
-
-      setServicioForm({
-        nombre: "",
-        descripcion: "",
-        duracionMinutos: "",
-        precio: "",
-        trabajadoresSeleccionados: [],
-      });
-      setDialogOpen((prev) => ({ ...prev, servicio: false }));
-      setSuccess("Servicio creado exitosamente");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
-      setErrors({ general: "Error al crear servicio" });
-    } finally {
-      setIsLoading(false);
-    }
+    createServicioMutation.mutate(nuevoServicio);
   };
 
   const handleDeleteTrabajador = (id: string) => {
-    setSuccess("Trabajador eliminado exitosamente");
-    setTimeout(() => setSuccess(null), 3000);
+    // Implement delete functionality with React Query
+    toast.success("Trabajador eliminado exitosamente");
   };
 
-  const handleDeleteServicio = (id: string) => {};
-
-  const formatearPrecio = (precio: number) => {
-    return new Intl.NumberFormat("es-ES", {
-      style: "currency",
-      currency: "COP",
-    }).format(precio);
-  };
-
-  const formatearDuracion = (minutos: number) => {
-    const horas = Math.floor(minutos / 60);
-    const mins = minutos % 60;
-    if (horas > 0) {
-      return mins > 0 ? `${horas}h ${mins}min` : `${horas}h`;
-    }
-    return `${mins}min`;
+  const handleDeleteServicio = (id: string) => {
+    // Implement delete functionality with React Query
+    toast.success("Servicio eliminado exitosamente");
   };
 
   const handleEditTrabajador = (trabajadorId: string) => {
@@ -272,6 +389,27 @@ export default function AdminPage() {
     setEditDialogOpen((prev) => ({ ...prev, servicio: true }));
   };
 
+  const handleEditCita = (citaId: string) => {
+    const citaToEdit = citas?.find((c) => c.id === citaId);
+    if (!citaToEdit) return;
+
+    setEditingId(citaId);
+    setNewEstadoCita(citaToEdit.estado);
+    setDialogOpen((prev) => ({
+      ...prev,
+      cita: true,
+    }));
+  };
+
+  const handleUpdateCita = async () => {
+    if (!editingId || !newEstadoCita) {
+      toast.error("ID de cita o nuevo estado no encontrado");
+      return;
+    }
+
+    updateCitaMutation.mutate({ id: editingId, estado: newEstadoCita });
+  };
+
   const handleUpdateTrabajador = async () => {
     setErrors({});
     const validationErrors = validateTrabajadorForm();
@@ -282,39 +420,17 @@ export default function AdminPage() {
     }
 
     if (!editingId) {
-      setErrors({ general: "ID del trabajador no encontrado" });
+      toast.error("ID del trabajador no encontrado");
       return;
     }
 
-    setIsLoading(true);
+    const datosActualizados = {
+      nombre: trabajadorForm.nombre,
+      especialidad: trabajadorForm.especialidad || null,
+      serviciosIds: trabajadorForm.serviciosSeleccionados,
+    };
 
-    try {
-      const datosActualizados = {
-        nombre: trabajadorForm.nombre,
-        especialidad: trabajadorForm.especialidad || null,
-        serviciosIds: trabajadorForm.serviciosSeleccionados,
-      };
-
-      const response = await updateTrabajador(editingId, datosActualizados);
-
-      if (!response.success) {
-        throw new Error(response.message);
-      }
-
-      setTrabajadorForm({
-        nombre: "",
-        especialidad: "",
-        serviciosSeleccionados: [],
-      });
-      setEditingId(null);
-      setEditDialogOpen((prev) => ({ ...prev, trabajador: false }));
-      setSuccess("Trabajador actualizado exitosamente");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
-      setErrors({ general: "Error al actualizar trabajador" });
-    } finally {
-      setIsLoading(false);
-    }
+    updateTrabajadorMutation.mutate({ id: editingId, data: datosActualizados });
   };
 
   const handleUpdateServicio = async () => {
@@ -327,56 +443,92 @@ export default function AdminPage() {
     }
 
     if (!editingId) {
-      setErrors({ general: "ID del servicio no encontrado" });
+      toast.error("ID del servicio no encontrado");
       return;
     }
 
-    setIsLoading(true);
+    const datosActualizados = {
+      nombre: servicioForm.nombre,
+      descripcion: servicioForm.descripcion || null,
+      duracionMinutos: Number.parseInt(servicioForm.duracionMinutos),
+      precio: Number.parseFloat(servicioForm.precio),
+      trabajadoresIds: servicioForm.trabajadoresSeleccionados,
+    };
 
-    try {
-      const datosActualizados = {
-        nombre: servicioForm.nombre,
-        descripcion: servicioForm.descripcion || null,
-        duracionMinutos: Number.parseInt(servicioForm.duracionMinutos),
-        precio: Number.parseFloat(servicioForm.precio),
-        trabajadoresIds: servicioForm.trabajadoresSeleccionados,
-      };
-
-      const response = await updateServicio(editingId, datosActualizados);
-
-      if (!response.success) {
-        throw new Error(response.message);
-      }
-
-      setServicioForm({
-        nombre: "",
-        descripcion: "",
-        duracionMinutos: "",
-        precio: "",
-        trabajadoresSeleccionados: [],
-      });
-      setEditingId(null);
-      setEditDialogOpen((prev) => ({ ...prev, servicio: false }));
-      setSuccess("Servicio actualizado exitosamente");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (error) {
-      setErrors({ general: "Error al actualizar servicio" });
-    } finally {
-      setIsLoading(false);
-    }
+    updateServicioMutation.mutate({ id: editingId, data: datosActualizados });
   };
 
-  if (!trabajadores || !servicios) {
+  const formatearPrecio = (precio: number) => {
+    return new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: "COP",
+    }).format(precio);
+  };
+
+  const formatearDuracion = (minutos: number) => {
+    const horas = Math.floor(minutos / 60);
+    const mins = minutos % 60;
+    if (horas > 0) {
+      return mins > 0 ? `${horas}h ${mins}min` : `${horas}h`;
+    }
+    return `${mins}min`;
+  };
+
+  const formatearFechaHora = (fecha: Date) => {
+    return fecha.toLocaleString("es-ES", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const isLoading = loadingTrabajadores || loadingServicios || loadingCitas;
+
+  const isMutating =
+    createTrabajadorMutation.isPending ||
+    updateTrabajadorMutation.isPending ||
+    createServicioMutation.isPending ||
+    updateServicioMutation.isPending ||
+    updateCitaMutation.isPending;
+
+  if (!usuarioActual) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p>Cargando...</p>
+        <LoaderCircle className="w-8 h-8 animate-spin text-gray-500" />
+        <p className="ml-2">Verificando sesión...</p>
+      </div>
+    );
+  }
+
+  if (!servicios || !trabajadores || !citas) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <LoaderCircle className="w-8 h-8 animate-spin text-gray-500" />
+        <p className="ml-2">Cargando datos...</p>
+      </div>
+    );
+  }
+
+  if (usuarioActual?.role !== "ADMIN") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Acceso restringido</h2>
+        <p className="text-gray-600 mb-6">
+          Esta área es solo para administradores.
+        </p>
+        <Button onClick={() => (window.location.href = "/")}>
+          Volver al inicio
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -396,33 +548,33 @@ export default function AdminPage() {
                 Panel de Administración
               </h1>
             </div>
+            <div className="flex items-center">
+              <Badge variant="outline" className="ml-2">
+                Admin: {usuarioActual.name}
+              </Badge>
+            </div>
           </div>
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Mensaje de éxito */}
-        {success && (
-          <Alert className="mb-6 border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-700">
-              {success}
-            </AlertDescription>
-          </Alert>
+        {/* Global loader */}
+        {isLoading && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center p-4 border rounded-md bg-gray-50">
+              <LoaderCircle className="w-6 h-6 animate-spin text-purple-600 mr-2" />
+              <span>Cargando datos...</span>
+            </div>
+          </div>
         )}
 
-        {/* Mensaje de error general */}
-        {errors.general && (
-          <Alert className="mb-6 border-red-200 bg-red-50">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-700">
-              {errors.general}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Tabs defaultValue="trabajadores" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+        <Tabs
+          defaultValue="trabajadores"
+          className="space-y-6"
+          value={activeTab}
+          onValueChange={setActiveTab}
+        >
+          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
             <TabsTrigger
               value="trabajadores"
               className="flex items-center space-x-2"
@@ -436,6 +588,10 @@ export default function AdminPage() {
             >
               <Briefcase className="w-4 h-4" />
               <span>Servicios</span>
+            </TabsTrigger>
+            <TabsTrigger value="citas" className="flex items-center space-x-2">
+              <Calendar className="w-4 h-4" />
+              <span>Citas</span>
             </TabsTrigger>
           </TabsList>
 
@@ -453,9 +609,10 @@ export default function AdminPage() {
 
               <Dialog
                 open={dialogOpen.trabajador}
-                onOpenChange={(open) =>
-                  setDialogOpen((prev) => ({ ...prev, trabajador: open }))
-                }
+                onOpenChange={(open) => {
+                  setDialogOpen((prev) => ({ ...prev, trabajador: open }));
+                  if (!open) resetTrabajadorForm();
+                }}
               >
                 <DialogTrigger asChild>
                   <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
@@ -511,46 +668,58 @@ export default function AdminPage() {
 
                     <div className="space-y-2">
                       <Label>Servicios que puede realizar</Label>
-                      <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                        {servicios.map((servicio) => (
-                          <div
-                            key={servicio.id}
-                            className="flex items-center space-x-2"
-                          >
-                            <Checkbox
-                              id={`servicio-${servicio.id}`}
-                              checked={trabajadorForm.serviciosSeleccionados.includes(
-                                servicio.id
-                              )}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setTrabajadorForm((prev) => ({
-                                    ...prev,
-                                    serviciosSeleccionados: [
-                                      ...prev.serviciosSeleccionados,
-                                      servicio.id,
-                                    ],
-                                  }));
-                                } else {
-                                  setTrabajadorForm((prev) => ({
-                                    ...prev,
-                                    serviciosSeleccionados:
-                                      prev.serviciosSeleccionados.filter(
-                                        (id) => id !== servicio.id
-                                      ),
-                                  }));
-                                }
-                              }}
-                            />
-                            <Label
-                              htmlFor={`servicio-${servicio.id}`}
-                              className="text-sm"
-                            >
-                              {servicio.nombre}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
+                      {loadingServicios ? (
+                        <div className="flex justify-center p-4">
+                          <LoaderCircle className="w-6 h-6 animate-spin text-gray-400" />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                          {servicios && servicios.length > 0 ? (
+                            servicios.map((servicio) => (
+                              <div
+                                key={servicio.id}
+                                className="flex items-center space-x-2"
+                              >
+                                <Checkbox
+                                  id={`servicio-${servicio.id}`}
+                                  checked={trabajadorForm.serviciosSeleccionados.includes(
+                                    servicio.id
+                                  )}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setTrabajadorForm((prev) => ({
+                                        ...prev,
+                                        serviciosSeleccionados: [
+                                          ...prev.serviciosSeleccionados,
+                                          servicio.id,
+                                        ],
+                                      }));
+                                    } else {
+                                      setTrabajadorForm((prev) => ({
+                                        ...prev,
+                                        serviciosSeleccionados:
+                                          prev.serviciosSeleccionados.filter(
+                                            (id) => id !== servicio.id
+                                          ),
+                                      }));
+                                    }
+                                  }}
+                                />
+                                <Label
+                                  htmlFor={`servicio-${servicio.id}`}
+                                  className="text-sm"
+                                >
+                                  {servicio.nombre}
+                                </Label>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-2 text-gray-500">
+                              No hay servicios disponibles
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -563,14 +732,19 @@ export default function AdminPage() {
                           trabajador: false,
                         }))
                       }
+                      disabled={createTrabajadorMutation.isPending}
                     >
                       Cancelar
                     </Button>
                     <Button
                       onClick={handleCreateTrabajador}
-                      disabled={isLoading}
+                      disabled={createTrabajadorMutation.isPending}
+                      className="relative"
                     >
-                      {isLoading ? "Creando..." : "Crear Trabajador"}
+                      {createTrabajadorMutation.isPending && (
+                        <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                      )}
+                      Crear Trabajador
                     </Button>
                   </div>
                 </DialogContent>
@@ -685,11 +859,19 @@ export default function AdminPage() {
                         trabajador: false,
                       }))
                     }
+                    disabled={updateTrabajadorMutation.isPending}
                   >
                     Cancelar
                   </Button>
-                  <Button onClick={handleUpdateTrabajador} disabled={isLoading}>
-                    {isLoading ? "Actualizando..." : "Actualizar Trabajador"}
+                  <Button
+                    onClick={handleUpdateTrabajador}
+                    disabled={updateTrabajadorMutation.isPending}
+                    className="relative"
+                  >
+                    {updateTrabajadorMutation.isPending && (
+                      <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Actualizar Trabajador
                   </Button>
                 </div>
               </DialogContent>
@@ -700,105 +882,120 @@ export default function AdminPage() {
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Users className="w-5 h-5" />
-                  <span>Trabajadores Registrados ({trabajadores.length})</span>
+                  <span>
+                    Trabajadores Registrados ({trabajadores?.length || 0})
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Trabajador</TableHead>
-                      <TableHead>Especialidad</TableHead>
-                      <TableHead>Servicios</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {trabajadores.map((trabajador) => (
-                      <TableRow key={trabajador.id}>
-                        <TableCell>
-                          <div className="flex items-center space-x-3">
-                            <Avatar>
-                              <AvatarImage src="/placeholder.svg" />
-                              <AvatarFallback>
-                                {trabajador.nombre
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-medium">{trabajador.nombre}</p>
+                {loadingTrabajadores ? (
+                  <TableSkeleton />
+                ) : trabajadores && trabajadores.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Trabajador</TableHead>
+                        <TableHead>Especialidad</TableHead>
+                        <TableHead>Servicios</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {trabajadores.map((trabajador) => (
+                        <TableRow key={trabajador.id}>
+                          <TableCell>
+                            <div className="flex items-center space-x-3">
+                              <Avatar>
+                                <AvatarImage src="/placeholder.svg" />
+                                <AvatarFallback>
+                                  {trabajador.nombre
+                                    .split(" ")
+                                    .map((n) => n[0])
+                                    .join("")}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-medium">
+                                  {trabajador.nombre}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {trabajador.especialidad ? (
-                            <Badge
-                              variant="secondary"
-                              className="bg-purple-100 text-purple-700"
-                            >
-                              <Star className="w-3 h-3 mr-1" />
-                              {trabajador.especialidad}
-                            </Badge>
-                          ) : (
-                            <span className="text-gray-400">
-                              Sin especialidad
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {trabajador.servicios
-                              .slice(0, 2)
-                              .map((servicio) => (
-                                <Badge
-                                  key={servicio.id}
-                                  variant="outline"
-                                  className="text-xs"
-                                >
-                                  {servicio.nombre}
-                                </Badge>
-                              ))}
-                            {trabajador.servicios.length > 2 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{trabajador.servicios.length - 2} más
+                          </TableCell>
+                          <TableCell>
+                            {trabajador.especialidad ? (
+                              <Badge
+                                variant="secondary"
+                                className="bg-purple-100 text-purple-700"
+                              >
+                                <Star className="w-3 h-3 mr-1" />
+                                {trabajador.especialidad}
                               </Badge>
-                            )}
-                            {trabajador.servicios.length === 0 && (
-                              <span className="text-gray-400 text-sm">
-                                Sin servicios
+                            ) : (
+                              <span className="text-gray-400">
+                                Sin especialidad
                               </span>
                             )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleEditTrabajador(trabajador.id)
-                              }
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleDeleteTrabajador(trabajador.id)
-                              }
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {trabajador.servicios
+                                .slice(0, 2)
+                                .map((servicio) => (
+                                  <Badge
+                                    key={servicio.id}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    {servicio.nombre}
+                                  </Badge>
+                                ))}
+                              {trabajador.servicios.length > 2 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{trabajador.servicios.length - 2} más
+                                </Badge>
+                              )}
+                              {trabajador.servicios.length === 0 && (
+                                <span className="text-gray-400 text-sm">
+                                  Sin servicios
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleEditTrabajador(trabajador.id)
+                                }
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleDeleteTrabajador(trabajador.id)
+                                }
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <EmptyState
+                    type="trabajadores"
+                    onAddNew={() =>
+                      setDialogOpen((prev) => ({ ...prev, trabajador: true }))
+                    }
+                  />
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1163,11 +1360,19 @@ export default function AdminPage() {
                         servicio: false,
                       }))
                     }
+                    disabled={updateServicioMutation.isPending}
                   >
                     Cancelar
                   </Button>
-                  <Button onClick={handleUpdateServicio} disabled={isLoading}>
-                    {isLoading ? "Actualizando..." : "Actualizar Servicio"}
+                  <Button
+                    onClick={handleUpdateServicio}
+                    disabled={updateServicioMutation.isPending}
+                    className="relative"
+                  >
+                    {updateServicioMutation.isPending && (
+                      <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Actualizar Servicio
                   </Button>
                 </div>
               </DialogContent>
@@ -1178,105 +1383,264 @@ export default function AdminPage() {
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Briefcase className="w-5 h-5" />
-                  <span>Servicios Disponibles ({servicios.length})</span>
+                  <span>Servicios Disponibles ({servicios?.length || 0})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Servicio</TableHead>
-                      <TableHead>Duración</TableHead>
-                      <TableHead>Precio</TableHead>
-                      <TableHead>Trabajadores</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {servicios.map((servicio) => (
-                      <TableRow key={servicio.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{servicio.nombre}</p>
-                            {servicio.descripcion && (
-                              <p className="text-sm text-gray-500 mt-1">
-                                {servicio.descripcion}
-                              </p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className="flex items-center w-fit"
-                          >
-                            <Clock className="w-3 h-3 mr-1" />
-                            {formatearDuracion(servicio.duracionMinutos)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="secondary"
-                            className="bg-green-100 text-green-700 flex items-center w-fit"
-                          >
-                            <DollarSign className="w-3 h-3 mr-1" />
-                            {formatearPrecio(servicio.precio)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {servicio.trabajadores
-                              .slice(0, 2)
-                              .map((trabajador) => (
-                                <Badge
-                                  key={trabajador.id}
-                                  variant="outline"
-                                  className="text-xs"
-                                >
-                                  <User className="w-3 h-3 mr-1" />
-                                  {trabajador.nombre}
+                {loadingServicios ? (
+                  <TableSkeleton />
+                ) : servicios && servicios.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Servicio</TableHead>
+                        <TableHead>Duración</TableHead>
+                        <TableHead>Precio</TableHead>
+                        <TableHead>Trabajadores</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {servicios.map((servicio) => (
+                        <TableRow key={servicio.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{servicio.nombre}</p>
+                              {servicio.descripcion && (
+                                <p className="text-sm text-gray-500 mt-1">
+                                  {servicio.descripcion}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className="flex items-center w-fit"
+                            >
+                              <Clock className="w-3 h-3 mr-1" />
+                              {formatearDuracion(servicio.duracionMinutos)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className="bg-green-100 text-green-700 flex items-center w-fit"
+                            >
+                              <DollarSign className="w-3 h-3 mr-1" />
+                              {formatearPrecio(servicio.precio)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {servicio.trabajadores
+                                .slice(0, 2)
+                                .map((trabajador) => (
+                                  <Badge
+                                    key={trabajador.id}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    <User className="w-3 h-3 mr-1" />
+                                    {trabajador.nombre}
+                                  </Badge>
+                                ))}
+                              {servicio.trabajadores.length > 2 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{servicio.trabajadores.length - 2} más
                                 </Badge>
-                              ))}
-                            {servicio.trabajadores.length > 2 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{servicio.trabajadores.length - 2} más
-                              </Badge>
-                            )}
-                            {servicio.trabajadores.length === 0 && (
-                              <span className="text-gray-400 text-sm">
-                                Sin trabajadores
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
+                              )}
+                              {servicio.trabajadores.length === 0 && (
+                                <span className="text-gray-400 text-sm">
+                                  Sin trabajadores
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditServicio(servicio.id)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleDeleteServicio(servicio.id)
+                                }
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <EmptyState
+                    type="servicios"
+                    onAddNew={() =>
+                      setDialogOpen((prev) => ({ ...prev, servicio: true }))
+                    }
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab de Citas */}
+          <TabsContent value="citas" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Gestión de Citas
+                </h2>
+                <p className="text-gray-600">
+                  Administra las citas agendadas y su estado
+                </p>
+              </div>
+
+              <Dialog
+                open={dialogOpen.cita}
+                onOpenChange={(open) =>
+                  setDialogOpen((prev) => ({ ...prev, cita: open }))
+                }
+              >
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Editar estado cita</DialogTitle>
+                    <DialogDescription>
+                      Actualiza el estado de la cita seleccionada
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-4 py-4">
+                    <Label htmlFor="estado-cita">Nuevo estado</Label>
+                    <Select
+                      value={newEstadoCita as string}
+                      onValueChange={(value) =>
+                        setNewEstadoCita(
+                          value as Prisma.CitaUpdateInput["estado"]
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecciona un estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CONFIRMADA">Confirmada</SelectItem>
+                        <SelectItem value="CANCELADA">Cancelada</SelectItem>
+                        <SelectItem value="COMPLETADA">Completada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex justify-end space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setDialogOpen((prev) => ({ ...prev, cita: false }))
+                      }
+                      disabled={updateCitaMutation.isPending}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleUpdateCita}
+                      disabled={updateCitaMutation.isPending}
+                      className="relative"
+                    >
+                      {updateCitaMutation.isPending && (
+                        <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                      )}
+                      Actualizar Estado
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            {/* Tabla de Citas */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Calendar className="w-5 h-5" />
+                  <span>Citas Agendadas ({citas?.length || 0})</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingCitas ? (
+                  <TableSkeleton />
+                ) : citas && citas.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Fecha y Hora</TableHead>
+                        <TableHead>Servicio</TableHead>
+                        <TableHead>Trabajador</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {citas.map((cita) => (
+                        <TableRow key={cita.id}>
+                          <TableCell>{cita.cliente.name}</TableCell>
+                          <TableCell>
+                            {formatearFechaHora(cita.fechaHora)}
+                          </TableCell>
+                          <TableCell>{cita.servicio.nombre}</TableCell>
+                          <TableCell>{cita.trabajador.nombre}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                cita.estado === "CONFIRMADA"
+                                  ? "outline"
+                                  : cita.estado === "COMPLETADA"
+                                  ? "secondary"
+                                  : "destructive"
+                              }
+                            >
+                              {cita.estado}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleEditServicio(servicio.id)}
+                              onClick={() => handleEditCita(cita.id)}
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteServicio(servicio.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-10">
+                    <p className="text-gray-500">No hay citas registradas</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AdminPageContent />
+    </QueryClientProvider>
   );
 }
