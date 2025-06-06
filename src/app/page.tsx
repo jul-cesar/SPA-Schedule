@@ -42,10 +42,8 @@ import {
   LoaderCircle,
   LogOut,
   Search,
-  Settings,
   Shield,
   SlidersHorizontal,
-  User,
   Users,
   X,
 } from "lucide-react";
@@ -53,7 +51,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-// Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -66,7 +63,6 @@ const queryClient = new QueryClient({
 const { data: session } = await authClient.getSession();
 const usuarioActual = session?.user;
 
-// Skeleton loader for service cards
 const ServiceCardSkeleton = () => (
   <div className="bg-white/80 backdrop-blur-sm rounded-lg border shadow-lg p-6 h-full">
     <div className="flex justify-between items-start mb-4">
@@ -127,7 +123,6 @@ function DashboardContent() {
           servicio.descripcion.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
-    // Apply sorting
     return [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "price-asc":
@@ -217,9 +212,9 @@ function DashboardContent() {
     );
   }
 
-  if (!usuarioActual) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-50 to-pink-50">
+      <div className="flex items-center justify-center min-h-screen  ">
         <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md w-full">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -232,10 +227,6 @@ function DashboardContent() {
             </h2>
             <p className="text-gray-600">
               Por favor, espera mientras se carga tu perfil y los servicios.
-            </p>
-            <p className="text-gray-500 text-sm mt-4">
-              Si el problema persiste, intenta recargar la página o contacta al
-              soporte.
             </p>
           </motion.div>
         </div>
@@ -263,7 +254,7 @@ function DashboardContent() {
             </div>
 
             <div className="flex items-center space-x-4">
-              {usuarioActual.role === "ADMIN" && (
+              {usuarioActual?.role === "ADMIN" && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -271,76 +262,69 @@ function DashboardContent() {
                   className="flex items-center space-x-2 border-purple-200 text-purple-700 hover:bg-purple-50"
                 >
                   <Shield className="w-4 h-4" />
-                  <span className="hidden sm:inline">Panel Admin</span>
+                  <span className=" sm:inline">Panel Admin</span>
                 </Button>
               )}
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="flex items-center space-x-2 hover:bg-gray-100"
-                  >
-                    <Avatar className="w-8 h-8">
-                      <AvatarImage
-                        src={usuarioActual.image || "/placeholder.svg"}
-                        alt={usuarioActual.name}
-                      />
-                      <AvatarFallback className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
-                        {usuarioActual.name
-                          ?.split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="hidden sm:block text-sm font-medium">
-                      {usuarioActual.name}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium">{usuarioActual.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {usuarioActual.email}
-                    </p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile" className="cursor-pointer">
-                      <User className="w-4 h-4 mr-2" />
-                      Mi Perfil
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/citas" className="cursor-pointer">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Mis Citas
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings" className="cursor-pointer">
-                      <Settings className="w-4 h-4 mr-2" />
-                      Configuración
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleLogout}
-                    className="text-red-600 cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Cerrar Sesión
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {usuarioActual && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="flex items-center space-x-2 hover:bg-gray-100"
+                    >
+                      <Avatar className="w-8 h-8">
+                        <AvatarImage
+                          src={usuarioActual.image || "/placeholder.svg"}
+                          alt={usuarioActual.name}
+                        />
+                        <AvatarFallback className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                          {usuarioActual.name
+                            ?.split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="hidden sm:block text-sm font-medium">
+                        {usuarioActual.name}
+                      </span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <div className="px-2 py-1.5">
+                      <p className="text-sm font-medium">
+                        {usuarioActual.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {usuarioActual.email}
+                      </p>
+                    </div>
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem asChild>
+                      <Link href="/citas" className="cursor-pointer">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        Mis Citas
+                      </Link>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleLogout}
+                      className="text-red-600 cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Cerrar Sesión
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header with welcome message */}
         <motion.div
           className="mb-8"
           initial={{ opacity: 0, y: -20 }}
@@ -348,14 +332,13 @@ function DashboardContent() {
           transition={{ duration: 0.5 }}
         >
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Bienvenido, {usuarioActual.name?.split(" ")[0] || "Usuario"} 👋
+            Bienvenido, {usuarioActual?.name?.split(" ")[0] || "Usuario"} 👋
           </h2>
           <p className="text-gray-600">
             Descubre nuestros servicios y agenda tu próxima cita
           </p>
         </motion.div>
 
-        {/* Filters and search */}
         <motion.div
           className="mb-8 space-y-4"
           initial={{ opacity: 0 }}
@@ -478,7 +461,6 @@ function DashboardContent() {
                     </CardHeader>
 
                     <CardContent className="space-y-4 flex-grow flex flex-col">
-                      {/* Duración */}
                       <div className="flex items-center space-x-2 text-sm text-gray-600">
                         <Clock className="w-4 h-4 text-purple-600" />
                         <span>
@@ -486,9 +468,6 @@ function DashboardContent() {
                         </span>
                       </div>
 
-                      {/* Rating (if available) */}
-
-                      {/* Trabajadores */}
                       <div className="space-y-2 flex-grow">
                         <div className="flex items-center space-x-2 text-sm font-medium text-gray-700">
                           <Users className="w-4 h-4 text-purple-600" />
@@ -545,7 +524,6 @@ function DashboardContent() {
               ))}
         </div>
 
-        {/* Empty state */}
         {!isLoading && serviciosFiltrados.length === 0 && (
           <motion.div
             className="text-center py-12 bg-white rounded-lg shadow-md my-8"

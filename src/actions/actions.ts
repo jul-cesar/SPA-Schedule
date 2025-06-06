@@ -47,10 +47,22 @@ export const getunavailableDates = async (
       },
     });
 
+   
     const unavailableDates = [
-      ...closedDates.map((date) => date.fecha.toISOString().slice(0, 10)),
-      ...globalClosedDates.map((date) => date.fecha.toISOString().slice(0, 10)),
+      ...closedDates.map((date) => {
+       
+        const d = new Date(date.fecha);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }),
+      ...globalClosedDates.map((date) => {
+   
+        const d = new Date(date.fecha);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }),
     ];
+    
+    console.log("Unavailable dates:", unavailableDates);
+    
     return {
       success: true,
       message: "Fechas no disponibles obtenidas correctamente",
@@ -78,6 +90,7 @@ export const getAvailableDates = async (
     "duracion:",
     duracionMinutos
   );
+  
   if (!date) {
     return {
       success: false,
@@ -86,9 +99,17 @@ export const getAvailableDates = async (
   }
 
   try {
-    const isClosed = await prisma.diaCerradoGlobal.findUnique({
+    const [year, month, day] = date.split('-').map(Number);
+    const dateUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    
+    console.log("Checking availability for UTC date:", dateUTC.toISOString());
+    
+    const isClosed = await prisma.diaCerradoGlobal.findFirst({
       where: {
-        fecha: new Date(date),
+        fecha: {
+          gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
+          lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
+        }
       },
     });
 
@@ -104,12 +125,13 @@ export const getAvailableDates = async (
       };
     }
 
-    const isFechaHoraAvailable = await prisma.diaCerradoTrabajador.findUnique({
+    const isFechaHoraAvailable = await prisma.diaCerradoTrabajador.findFirst({
       where: {
-        trabajadorId_fecha: {
-          trabajadorId: idTrabajador,
-          fecha: new Date(date),
-        },
+        trabajadorId: idTrabajador,
+        fecha: {
+          gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
+          lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
+        }
       },
     });
 
@@ -125,10 +147,13 @@ export const getAvailableDates = async (
       };
     }
 
-    const diaEspecial = await prisma.diaEspecial.findUnique({
+    const diaEspecial = await prisma.diaEspecial.findFirst({
       where: {
         trabajadorId: idTrabajador,
-        fecha: new Date(date),
+        fecha: {
+          gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
+          lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
+        }
       },
     });
 
@@ -143,13 +168,14 @@ export const getAvailableDates = async (
       slots = generateTimeSlots("08:00", "17:00");
     }
 
+    // Find appointments on this day using UTC dates
     const citas = await prisma.cita.findMany({
       where: {
         trabajadorId: idTrabajador,
         fechaHora: {
-          gte: new Date(`${date}T00:00:00`),
-          lt: new Date(`${date}T23:59:59`),
-        },
+          gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
+          lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
+        }
       },
       include: {
         servicio: true,
@@ -161,9 +187,9 @@ export const getAvailableDates = async (
     citas.forEach((cita) => {
       const startTime = cita.fechaHora;
       const citaDuracion = cita.servicio?.duracionMinutos || 30;
-
-   
-      const startSlot = startTime.toTimeString().slice(0, 5);
+      
+      // Get time part only in local timezone
+      const startSlot = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
       blockedSlots.add(startSlot);
 
       const slotsToBlock = Math.ceil(citaDuracion / 30);
@@ -172,31 +198,25 @@ export const getAvailableDates = async (
         let currentTime = new Date(startTime);
         for (let i = 1; i < slotsToBlock; i++) {
           currentTime = new Date(currentTime.getTime() + 30 * 60000); 
-          blockedSlots.add(currentTime.toTimeString().slice(0, 5));
+          const nextSlot = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`;
+          blockedSlots.add(nextSlot);
         }
       }
     });
 
-
     const requestedServiceSlots = Math.ceil(duracionMinutos / 30);
 
-
     const availableSlots = slots.filter((slot) => {
-      
       if (blockedSlots.has(slot)) return false;
 
-   
       if (requestedServiceSlots > 1) {
- 
         const [hours, minutes] = slot.split(":").map(Number);
         let slotTime = new Date(2000, 0, 1, hours, minutes);
-
         
         for (let i = 1; i < requestedServiceSlots; i++) {
           slotTime = new Date(slotTime.getTime() + 30 * 60000);
           const nextSlot = slotTime.toTimeString().slice(0, 5);
-
-   
+          
           if (blockedSlots.has(nextSlot) || !slots.includes(nextSlot)) {
             return false;
           }
@@ -704,3 +724,182 @@ export const updateCitaStatus = async (
     };
   }
 }
+
+export const getCurrentUserCitas = async (
+  userId: string
+): Promise<
+  Response<
+    Prisma.CitaGetPayload<{
+      include: {
+        trabajador: true;
+        servicio: true;
+      };
+    }>[]
+  > | undefined
+> => {
+  try {
+    if (!userId) {
+      return {
+        success: false,
+        message: "ID de usuario no proporcionado",
+      };
+    }
+
+    const citas = await prisma.cita.findMany({
+      where: {
+        clienteId: userId,
+      },
+      include: {
+        trabajador: true,
+        servicio: true,
+      },
+      orderBy: {
+        fechaHora: "asc",
+      },
+    });
+
+    return {
+      success: true,
+      message: "Citas del usuario obtenidas correctamente",
+      data: citas,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al obtener las citas del usuario",
+    };
+  }
+}
+
+export const cancelarCita = async (
+  citaId: string  
+): Promise<
+  Response<
+    Prisma.CitaGetPayload<{
+      include: {
+        trabajador: true;
+        servicio: true;
+      };
+    }>
+  > | undefined
+> => {
+  try {
+    if (!citaId) {
+      return {
+        success: false,
+        message: "ID de cita no proporcionado",
+      };
+    }
+
+    const cita = await prisma.cita.update({
+      where: { id: citaId },
+      data: { estado: "CANCELADA" },
+      include: {
+        trabajador: true,
+        servicio: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Cita cancelada correctamente",
+      data: cita,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al cancelar la cita",
+    };
+  }
+};
+
+
+export const getBlockedDays = async (): Promise<Response<{id: string, fecha: Date, motivo: string | null}[]>> => {
+  try {
+    const blockedDays = await prisma.diaCerradoGlobal.findMany({
+      orderBy: {
+        fecha: 'asc'
+      }
+    });
+
+    return {
+      success: true,
+      message: "Días bloqueados obtenidos correctamente",
+      data: blockedDays,
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al obtener los días bloqueados",
+    };
+  }
+};
+
+
+export const createBlockedDay = async (
+  { fecha, motivo }: { fecha: string, motivo: string | null }
+): Promise<Response<{id: string, fecha: Date, motivo: string | null}>> => {
+  try {
+    console.log("Received date string:", fecha);
+    
+ 
+    const [year, month, day] = fecha.split('-').map(Number);
+    
+
+    const dateOnly = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    
+    console.log("Date being saved to database:", dateOnly.toISOString());
+    
+    const blockedDay = await prisma.diaCerradoGlobal.create({
+      data: {
+        fecha: dateOnly,
+        motivo,
+      },
+    });
+
+    return {
+      success: true,
+      message: "Día bloqueado correctamente",
+      data: blockedDay,
+    };
+  } catch (error) {
+    console.error(error);
+    
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return {
+        success: false,
+        message: "Esta fecha ya está bloqueada",
+      };
+    }
+    return {
+      success: false,
+      message: "Error al bloquear el día",
+    };
+  }
+};
+
+
+export const deleteBlockedDay = async (
+  id: string
+): Promise<Response<{id: string}>> => {
+  try {
+    await prisma.diaCerradoGlobal.delete({
+      where: { id },
+    });
+
+    return {
+      success: true,
+      message: "Bloqueo eliminado correctamente",
+      data: { id },
+    };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false,
+      message: "Error al eliminar el bloqueo",
+    };
+  }
+};

@@ -60,9 +60,8 @@ const getUnavailableDates = async (trabajadorId: string): Promise<string[]> => {
   if (!undates.success) {
     throw new Error("Error al obtener fechas no disponibles");
   }
-  return (
-    undates.data?.map((date) => format(new Date(date), "yyyy-MM-dd")) ?? []
-  );
+
+  return undates.data || [];
 };
 
 const getAvailableSlots = async (
@@ -128,6 +127,7 @@ export default function BookAppointmentPage({ id }: BookAppointmentPageProps) {
   const [success, setSuccess] = useState(false);
   console.log(selectedTime);
   console.log(selectedDate);
+  console.log("unadates", unavailableDates);
   useEffect(() => {
     if (selectedTrabajador) {
       setIsLoading(true);
@@ -183,8 +183,19 @@ export default function BookAppointmentPage({ id }: BookAppointmentPageProps) {
   };
 
   const isDateUnavailable = (date: Date) => {
-    const dateString = format(date, "yyyy-MM-dd");
-    return unavailableDates.includes(dateString) || date < new Date();
+    const formattedDate = format(date, "yyyy-MM-dd");
+
+    console.log(
+      "Checking date:",
+      formattedDate,
+      "Is unavailable?",
+      unavailableDates.includes(formattedDate)
+    );
+
+    return (
+      unavailableDates.includes(formattedDate) ||
+      date < new Date(new Date().setHours(0, 0, 0, 0))
+    );
   };
 
   const handleTrabajadorSelect = (trabajador: Trabajador) => {

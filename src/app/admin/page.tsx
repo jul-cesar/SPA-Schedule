@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  createBlockedDay,
   createservicio,
   createTrabajador,
+  deleteBlockedDay,
+  getBlockedDays,
   getCitas,
   getServicios,
   getTrabajadores,
@@ -13,6 +16,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -51,17 +55,22 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   AlertCircle,
   ArrowLeft,
   Briefcase,
   Calendar,
+  CalendarIcon,
+  CalendarX,
   Clock,
   DollarSign,
   Edit,
   LoaderCircle,
   Plus,
   Star,
+  Trash,
   Trash2,
   User,
   Users,
@@ -73,7 +82,6 @@ interface FormErrors {
   [key: string]: string;
 }
 
-// Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -86,7 +94,6 @@ const queryClient = new QueryClient({
 const { data: session } = await authClient.getSession();
 const usuarioActual = session?.user;
 
-// Loading Skeleton Component
 const TableSkeleton = () => (
   <div className="w-full animate-pulse">
     <div className="h-10 bg-gray-200 rounded-md mb-4 w-1/4"></div>
@@ -98,7 +105,6 @@ const TableSkeleton = () => (
   </div>
 );
 
-// Empty State Component
 const EmptyState = ({
   type,
   onAddNew,
@@ -152,7 +158,17 @@ function AdminPageContent() {
     },
   });
 
-  // Mutations
+  const { data: blockedDaysData, isLoading: loadingBlockedDays } = useQuery({
+    queryKey: ["blockedDays"],
+    queryFn: async () => {
+      const response = await getBlockedDays();
+      if (!response.success) {
+        throw new Error(response.message);
+      }
+      return response.data || [];
+    },
+  });
+
   const createTrabajadorMutation = useMutation({
     mutationFn: createTrabajador,
     onSuccess: () => {
@@ -225,6 +241,30 @@ function AdminPageContent() {
     },
   });
 
+  const createBlockedDayMutation = useMutation({
+    mutationFn: createBlockedDay,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blockedDays"] });
+      toast.success("Día bloqueado correctamente");
+      setBlockedDayDate(undefined);
+      setBlockedDayMotivo("");
+    },
+    onError: (error: any) => {
+      toast.error("Error al bloquear el día: " + error.message);
+    },
+  });
+
+  const deleteBlockedDayMutation = useMutation({
+    mutationFn: deleteBlockedDay,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blockedDays"] });
+      toast.success("Bloqueo eliminado correctamente");
+    },
+    onError: (error: any) => {
+      toast.error("Error al eliminar el bloqueo: " + error.message);
+    },
+  });
+
   const [errors, setErrors] = useState<FormErrors>({});
 
   const [trabajadorForm, setTrabajadorForm] = useState({
@@ -258,7 +298,15 @@ function AdminPageContent() {
 
   const [activeTab, setActiveTab] = useState("trabajadores");
 
-  // Reset form functions
+  const [blockedDayDate, setBlockedDayDate] = useState<Date | undefined>(
+    undefined
+  );
+  const [blockedDayMotivo, setBlockedDayMotivo] = useState("");
+  const [blockedDays, setBlockedDays] = useState<
+    Array<{ id: string; fecha: Date; motivo: string | null }>
+  >([]);
+  const [isLoadingBlockedDays, setIsLoadingBlockedDays] = useState(false);
+
   const resetTrabajadorForm = () => {
     setTrabajadorForm({
       nombre: "",
@@ -279,7 +327,6 @@ function AdminPageContent() {
     setErrors({});
   };
 
-  // Form validation functions
   const validateTrabajadorForm = (): FormErrors => {
     const newErrors: FormErrors = {};
 
@@ -352,12 +399,10 @@ function AdminPageContent() {
   };
 
   const handleDeleteTrabajador = (id: string) => {
-    // Implement delete functionality with React Query
     toast.success("Trabajador eliminado exitosamente");
   };
 
   const handleDeleteServicio = (id: string) => {
-    // Implement delete functionality with React Query
     toast.success("Servicio eliminado exitosamente");
   };
 
@@ -458,6 +503,59 @@ function AdminPageContent() {
     updateServicioMutation.mutate({ id: editingId, data: datosActualizados });
   };
 
+  // Function to handle blocked day creation
+  const handleCreateBlockedDay = () => {
+    if (!blockedDayDate) {
+      toast.error("Debes seleccionar una fecha");
+      return;
+    }
+
+    // Fix the date timezone issue by using UTC date with time set to noon
+    // This ensures the date doesn't shift when converting between timezones
+    const utcDate = new Date(
+      Date.UTC(
+        blockedDayDate.getFullYear(),
+        blockedDayDate.getMonth(),
+        blockedDayDate.getDate(),
+        12,
+        0,
+        0
+      )
+    );
+
+    const formattedDate = format(utcDate, "yyyy-MM-dd");
+    console.log("Selected date:", blockedDayDate);
+    console.log("Formatted date to be sent:", formattedDate);
+
+    createBlockedDayMutation.mutate({
+      fecha: formattedDate,
+      motivo: blockedDayMotivo || null,
+    });
+  };
+
+  // Function to properly display blocked dates accounting for timezone
+  const isBlockedDay = (date: Date) => {
+    if (!blockedDaysData) return false;
+
+    // For comparison, we need to normalize both dates to remove time component
+    const normalizedDate = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    )
+      .toISOString()
+      .split("T")[0];
+
+    return blockedDaysData.some((day) => {
+      const dayDate = new Date(day.fecha);
+      const normalizedBlockedDate = new Date(
+        Date.UTC(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate())
+      )
+        .toISOString()
+        .split("T")[0];
+
+      return normalizedBlockedDate === normalizedDate;
+    });
+  };
+
   const formatearPrecio = (precio: number) => {
     return new Intl.NumberFormat("es-ES", {
       style: "currency",
@@ -485,14 +583,20 @@ function AdminPageContent() {
     });
   };
 
-  const isLoading = loadingTrabajadores || loadingServicios || loadingCitas;
+  const isLoading =
+    loadingTrabajadores ||
+    loadingServicios ||
+    loadingCitas ||
+    loadingBlockedDays;
 
   const isMutating =
     createTrabajadorMutation.isPending ||
     updateTrabajadorMutation.isPending ||
     createServicioMutation.isPending ||
     updateServicioMutation.isPending ||
-    updateCitaMutation.isPending;
+    updateCitaMutation.isPending ||
+    createBlockedDayMutation.isPending ||
+    deleteBlockedDayMutation.isPending;
 
   if (!usuarioActual) {
     return (
@@ -558,7 +662,6 @@ function AdminPageContent() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Global loader */}
         {isLoading && (
           <div className="mb-6">
             <div className="flex items-center justify-center p-4 border rounded-md bg-gray-50">
@@ -574,7 +677,7 @@ function AdminPageContent() {
           value={activeTab}
           onValueChange={setActiveTab}
         >
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
             <TabsTrigger
               value="trabajadores"
               className="flex items-center space-x-2"
@@ -593,9 +696,15 @@ function AdminPageContent() {
               <Calendar className="w-4 h-4" />
               <span>Citas</span>
             </TabsTrigger>
+            <TabsTrigger
+              value="bloqueos"
+              className="flex items-center space-x-2"
+            >
+              <CalendarX className="w-4 h-4" />
+              <span>Bloqueos</span>
+            </TabsTrigger>
           </TabsList>
 
-          {/* Tab de Trabajadores */}
           <TabsContent value="trabajadores" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -751,7 +860,6 @@ function AdminPageContent() {
               </Dialog>
             </div>
 
-            {/* Modal para editar trabajador */}
             <Dialog
               open={editDialogOpen.trabajador}
               onOpenChange={(open) => {
@@ -877,7 +985,6 @@ function AdminPageContent() {
               </DialogContent>
             </Dialog>
 
-            {/* Tabla de Trabajadores */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -1000,7 +1107,6 @@ function AdminPageContent() {
             </Card>
           </TabsContent>
 
-          {/* Tab de Servicios */}
           <TabsContent value="servicios" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -1191,7 +1297,6 @@ function AdminPageContent() {
               </Dialog>
             </div>
 
-            {/* Modal para editar servicio */}
             <Dialog
               open={editDialogOpen.servicio}
               onOpenChange={(open) => {
@@ -1378,7 +1483,6 @@ function AdminPageContent() {
               </DialogContent>
             </Dialog>
 
-            {/* Tabla de Servicios */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -1494,7 +1598,6 @@ function AdminPageContent() {
             </Card>
           </TabsContent>
 
-          {/* Tab de Citas */}
           <TabsContent value="citas" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -1611,13 +1714,15 @@ function AdminPageContent() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditCita(cita.id)}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditCita(cita.id)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1630,6 +1735,156 @@ function AdminPageContent() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="bloqueos" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Gestión de Días Bloqueados
+                </h2>
+                <p className="text-gray-600">
+                  Bloquea días completos en el calendario para todos los
+                  trabajadores
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <CalendarX className="w-5 h-5" />
+                    <span>Bloquear un Día</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-center mb-4">
+                    <CalendarComponent
+                      mode="single"
+                      selected={blockedDayDate}
+                      onSelect={setBlockedDayDate}
+                      disabled={(date) => {
+                        return (
+                          isBlockedDay(date) ||
+                          date < new Date(new Date().setHours(0, 0, 0, 0))
+                        );
+                      }}
+                      locale={es}
+                      className="rounded-md border"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="motivo">
+                      Motivo del bloqueo (opcional)
+                    </Label>
+                    <Textarea
+                      id="motivo"
+                      placeholder="Ej: Día festivo, mantenimiento..."
+                      value={blockedDayMotivo}
+                      onChange={(e) => setBlockedDayMotivo(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleCreateBlockedDay}
+                    disabled={
+                      !blockedDayDate || createBlockedDayMutation.isPending
+                    }
+                    className="w-full"
+                  >
+                    {createBlockedDayMutation.isPending ? (
+                      <>
+                        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                        Bloqueando...
+                      </>
+                    ) : (
+                      "Bloquear Día"
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <CalendarIcon className="w-5 h-5" />
+                    <span>Días Bloqueados</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingBlockedDays ? (
+                    <div className="flex justify-center py-8">
+                      <LoaderCircle className="animate-spin h-8 w-8 text-purple-600" />
+                    </div>
+                  ) : blockedDaysData && blockedDaysData.length > 0 ? (
+                    <div className="space-y-4">
+                      {blockedDaysData.map((day) => {
+                        const displayDate = new Date(day.fecha);
+
+                        const utcDate = new Date(
+                          Date.UTC(
+                            displayDate.getUTCFullYear(),
+                            displayDate.getUTCMonth(),
+                            displayDate.getUTCDate(),
+                            12,
+                            0,
+                            0
+                          )
+                        );
+
+                        return (
+                          <div
+                            key={day.id}
+                            className="flex justify-between items-center p-3 border rounded-md bg-gray-50"
+                          >
+                            <div>
+                              <p className="font-medium">
+                                {format(
+                                  utcDate,
+                                  "EEEE, d 'de' MMMM 'de' yyyy",
+                                  { locale: es }
+                                )}
+                              </p>
+                              {day.motivo && (
+                                <p className="text-sm text-gray-600">
+                                  {day.motivo}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                deleteBlockedDayMutation.mutate(day.id)
+                              }
+                              disabled={deleteBlockedDayMutation.isPending}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              {deleteBlockedDayMutation.isPending ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <CalendarIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">No hay días bloqueados</p>
+                      <p className="text-sm text-gray-400 mt-1">
+                        Los días que bloquees aparecerán aquí
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
