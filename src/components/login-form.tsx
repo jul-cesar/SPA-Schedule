@@ -158,7 +158,7 @@ export function LoginForm({
 
           <div className="bg-muted relative hidden md:block">
             <img
-              src="/placeholder.svg"
+              src="https://th.bing.com/th/id/R.ae3db028ccc85036418a5ac08422e5a9?rik=ul0iRWStwtsiwg&riu=http%3a%2f%2fwww.estoestucuman.com.ar%2fwp-content%2fuploads%2f2022%2f09%2fSpa-cdmx-cinco-razones-por-los-que-debes-ir-a-un-spa.jpg&ehk=kuwt%2bWsasmh%2bJM04PSqDztaJDTvMN1sDQ3y97tmoJfA%3d&risl=&pid=ImgRaw&r=0"
               alt="Image"
               className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
             />
