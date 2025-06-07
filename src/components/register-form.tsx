@@ -136,7 +136,7 @@ export function RegisterForm({
                   )}
                 />
 
-                <Button type="submit" className="w-full">
+                <Button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-pink-600">
                   Registrar
                 </Button>
 
