@@ -1077,16 +1077,6 @@ function AdminPageContent() {
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  handleDeleteTrabajador(trabajador.id)
-                                }
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1567,16 +1557,6 @@ function AdminPageContent() {
                                 onClick={() => handleEditServicio(servicio.id)}
                               >
                                 <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  handleDeleteServicio(servicio.id)
-                                }
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
                           </TableCell>
