@@ -533,11 +533,9 @@ function AdminPageContent() {
     });
   };
 
-  // Function to properly display blocked dates accounting for timezone
   const isBlockedDay = (date: Date) => {
     if (!blockedDaysData) return false;
 
-    // For comparison, we need to normalize both dates to remove time component
     const normalizedDate = new Date(
       Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
     )
