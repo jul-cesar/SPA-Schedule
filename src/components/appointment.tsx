@@ -300,7 +300,11 @@ export default function BookAppointmentPage({ id }: BookAppointmentPageProps) {
               <Button onClick={() => window.history.back()} className="w-full">
                 Volver al inicio
               </Button>
-              <Button variant="outline" className="w-full">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => (window.location.href = "/citas")}
+              >
                 Ver mis citas
               </Button>
             </div>
