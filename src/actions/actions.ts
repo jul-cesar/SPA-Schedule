@@ -47,22 +47,25 @@ export const getunavailableDates = async (
       },
     });
 
-   
     const unavailableDates = [
       ...closedDates.map((date) => {
-       
         const d = new Date(date.fecha);
-        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+          2,
+          "0"
+        )}-${String(d.getUTCDate()).padStart(2, "0")}`;
       }),
       ...globalClosedDates.map((date) => {
-   
         const d = new Date(date.fecha);
-        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+          2,
+          "0"
+        )}-${String(d.getUTCDate()).padStart(2, "0")}`;
       }),
     ];
-    
+
     console.log("Unavailable dates:", unavailableDates);
-    
+
     return {
       success: true,
       message: "Fechas no disponibles obtenidas correctamente",
@@ -90,7 +93,7 @@ export const getAvailableDates = async (
     "duracion:",
     duracionMinutos
   );
-  
+
   if (!date) {
     return {
       success: false,
@@ -99,17 +102,17 @@ export const getAvailableDates = async (
   }
 
   try {
-    const [year, month, day] = date.split('-').map(Number);
+    const [year, month, day] = date.split("-").map(Number);
     const dateUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    
+
     console.log("Checking availability for UTC date:", dateUTC.toISOString());
-    
+
     const isClosed = await prisma.diaCerradoGlobal.findFirst({
       where: {
         fecha: {
           gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
           lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
-        }
+        },
       },
     });
 
@@ -131,7 +134,7 @@ export const getAvailableDates = async (
         fecha: {
           gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
           lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
-        }
+        },
       },
     });
 
@@ -153,7 +156,7 @@ export const getAvailableDates = async (
         fecha: {
           gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
           lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
-        }
+        },
       },
     });
 
@@ -175,7 +178,7 @@ export const getAvailableDates = async (
         fechaHora: {
           gte: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
           lt: new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0)),
-        }
+        },
       },
       include: {
         servicio: true,
@@ -185,11 +188,14 @@ export const getAvailableDates = async (
     const blockedSlots = new Set<string>();
 
     citas.forEach((cita) => {
-      const startTime = cita.fechaHora;
+      const startTime = cita.fechaHora; // Sigue siendo un objeto Date en UTC
       const citaDuracion = cita.servicio?.duracionMinutos || 30;
-      
-      // Get time part only in local timezone
-      const startSlot = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
+
+      // CORRECCIÓN: Usar métodos UTC
+      const startSlot = `${String(startTime.getUTCHours()).padStart(
+        2,
+        "0"
+      )}:${String(startTime.getUTCMinutes()).padStart(2, "0")}`;
       blockedSlots.add(startSlot);
 
       const slotsToBlock = Math.ceil(citaDuracion / 30);
@@ -197,8 +203,12 @@ export const getAvailableDates = async (
       if (slotsToBlock > 1) {
         let currentTime = new Date(startTime);
         for (let i = 1; i < slotsToBlock; i++) {
-          currentTime = new Date(currentTime.getTime() + 30 * 60000); 
-          const nextSlot = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`;
+          currentTime = new Date(currentTime.getTime() + 30 * 60000);
+          // CORRECCIÓN: Usar métodos UTC también aquí
+          const nextSlot = `${String(currentTime.getUTCHours()).padStart(
+            2,
+            "0"
+          )}:${String(currentTime.getUTCMinutes()).padStart(2, "0")}`;
           blockedSlots.add(nextSlot);
         }
       }
@@ -212,11 +222,11 @@ export const getAvailableDates = async (
       if (requestedServiceSlots > 1) {
         const [hours, minutes] = slot.split(":").map(Number);
         let slotTime = new Date(2000, 0, 1, hours, minutes);
-        
+
         for (let i = 1; i < requestedServiceSlots; i++) {
           slotTime = new Date(slotTime.getTime() + 30 * 60000);
           const nextSlot = slotTime.toTimeString().slice(0, 5);
-          
+
           if (blockedSlots.has(nextSlot) || !slots.includes(nextSlot)) {
             return false;
           }
@@ -639,17 +649,17 @@ export const updateServicio = async (
   }
 };
 
-export const getCitas = async (
-): Promise<
-  Response<
-    Prisma.CitaGetPayload<{
-      include: {
-        trabajador: true;
-        servicio: true;
-        cliente: true;
-      };
-    }>[]
-  > | undefined
+export const getCitas = async (): Promise<
+  | Response<
+      Prisma.CitaGetPayload<{
+        include: {
+          trabajador: true;
+          servicio: true;
+          cliente: true;
+        };
+      }>[]
+    >
+  | undefined
 > => {
   try {
     const citas = await prisma.cita.findMany({
@@ -675,8 +685,7 @@ export const getCitas = async (
       message: "Error al obtener las citas",
     };
   }
-}
-
+};
 
 export const updateCitaStatus = async (
   id: string,
@@ -691,7 +700,7 @@ export const updateCitaStatus = async (
       };
     }>
   >
-> => {    
+> => {
   console.log("updateCitaStatus called with id:", id, "status:", status);
   try {
     if (!id || !status) {
@@ -723,19 +732,20 @@ export const updateCitaStatus = async (
       message: "Error al actualizar el estado de la cita",
     };
   }
-}
+};
 
 export const getCurrentUserCitas = async (
   userId: string
 ): Promise<
-  Response<
-    Prisma.CitaGetPayload<{
-      include: {
-        trabajador: true;
-        servicio: true;
-      };
-    }>[]
-  > | undefined
+  | Response<
+      Prisma.CitaGetPayload<{
+        include: {
+          trabajador: true;
+          servicio: true;
+        };
+      }>[]
+    >
+  | undefined
 > => {
   try {
     if (!userId) {
@@ -770,19 +780,20 @@ export const getCurrentUserCitas = async (
       message: "Error al obtener las citas del usuario",
     };
   }
-}
+};
 
 export const cancelarCita = async (
-  citaId: string  
+  citaId: string
 ): Promise<
-  Response<
-    Prisma.CitaGetPayload<{
-      include: {
-        trabajador: true;
-        servicio: true;
-      };
-    }>
-  > | undefined
+  | Response<
+      Prisma.CitaGetPayload<{
+        include: {
+          trabajador: true;
+          servicio: true;
+        };
+      }>
+    >
+  | undefined
 > => {
   try {
     if (!citaId) {
@@ -815,13 +826,14 @@ export const cancelarCita = async (
   }
 };
 
-
-export const getBlockedDays = async (): Promise<Response<{id: string, fecha: Date, motivo: string | null}[]>> => {
+export const getBlockedDays = async (): Promise<
+  Response<{ id: string; fecha: Date; motivo: string | null }[]>
+> => {
   try {
     const blockedDays = await prisma.diaCerradoGlobal.findMany({
       orderBy: {
-        fecha: 'asc'
-      }
+        fecha: "asc",
+      },
     });
 
     return {
@@ -838,21 +850,22 @@ export const getBlockedDays = async (): Promise<Response<{id: string, fecha: Dat
   }
 };
 
-
-export const createBlockedDay = async (
-  { fecha, motivo }: { fecha: string, motivo: string | null }
-): Promise<Response<{id: string, fecha: Date, motivo: string | null}>> => {
+export const createBlockedDay = async ({
+  fecha,
+  motivo,
+}: {
+  fecha: string;
+  motivo: string | null;
+}): Promise<Response<{ id: string; fecha: Date; motivo: string | null }>> => {
   try {
     console.log("Received date string:", fecha);
-    
- 
-    const [year, month, day] = fecha.split('-').map(Number);
-    
+
+    const [year, month, day] = fecha.split("-").map(Number);
 
     const dateOnly = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    
+
     console.log("Date being saved to database:", dateOnly.toISOString());
-    
+
     const blockedDay = await prisma.diaCerradoGlobal.create({
       data: {
         fecha: dateOnly,
@@ -867,8 +880,11 @@ export const createBlockedDay = async (
     };
   } catch (error) {
     console.error(error);
-    
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
       return {
         success: false,
         message: "Esta fecha ya está bloqueada",
@@ -881,10 +897,9 @@ export const createBlockedDay = async (
   }
 };
 
-
 export const deleteBlockedDay = async (
   id: string
-): Promise<Response<{id: string}>> => {
+): Promise<Response<{ id: string }>> => {
   try {
     await prisma.diaCerradoGlobal.delete({
       where: { id },
