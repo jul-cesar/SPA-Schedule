@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-
+import { format, toZonedTime } from "date-fns-tz";
 const generateTimeSlots = (openTime: string, closeTime: string): string[] => {
   const slots: string[] = [];
   let currentTime = new Date(`2000-01-01T${openTime}:00`);
@@ -187,33 +187,35 @@ export const getAvailableDates = async (
 
     const blockedSlots = new Set<string>();
 
-    citas.forEach((cita) => {
-      const startTime = cita.fechaHora; // Sigue siendo un objeto Date en UTC
+    const colombiaTimeZone = "America/Bogota";
+
+ citas.forEach((cita) => {
+      const utcDate = cita.fechaHora;
       const citaDuracion = cita.servicio?.duracionMinutos || 30;
 
-      // CORRECCIÓN: Usar métodos UTC
-      const startSlot = `${String(startTime.getUTCHours()).padStart(
-        2,
-        "0"
-      )}:${String(startTime.getUTCMinutes()).padStart(2, "0")}`;
+      // 2. USE THE CORRECT FUNCTION: toZonedTime
+      const zonedStartTime = toZonedTime(utcDate, colombiaTimeZone);
+
+      const startSlot = format(zonedStartTime, "HH:mm", {
+        timeZone: colombiaTimeZone,
+      });
       blockedSlots.add(startSlot);
 
       const slotsToBlock = Math.ceil(citaDuracion / 30);
 
       if (slotsToBlock > 1) {
-        let currentTime = new Date(startTime);
+        let currentTime = new Date(utcDate);
         for (let i = 1; i < slotsToBlock; i++) {
           currentTime = new Date(currentTime.getTime() + 30 * 60000);
-          // CORRECCIÓN: Usar métodos UTC también aquí
-          const nextSlot = `${String(currentTime.getUTCHours()).padStart(
-            2,
-            "0"
-          )}:${String(currentTime.getUTCMinutes()).padStart(2, "0")}`;
+          // 3. USE THE CORRECT FUNCTION HERE AS WELL
+          const zonedNextTime = toZonedTime(currentTime, colombiaTimeZone);
+          const nextSlot = format(zonedNextTime, "HH:mm", {
+            timeZone: colombiaTimeZone,
+          });
           blockedSlots.add(nextSlot);
         }
       }
     });
-
     const requestedServiceSlots = Math.ceil(duracionMinutos / 30);
 
     const availableSlots = slots.filter((slot) => {
