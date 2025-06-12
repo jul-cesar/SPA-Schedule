@@ -205,7 +205,7 @@ function DashboardContent() {
             className="w-full bg-gradient-to-r from-purple-600 to-pink-600"
           >
             <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
-            Reintentar
+            Reintentarr
           </Button>
         </div>
       </div>
